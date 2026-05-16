@@ -173,219 +173,26 @@ Then open:
 
 ---
 
-## Backend API
+## Screenshots
 
-| Method · path                            | Purpose                                                                                       |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `POST /api/users`                        | Onboard. Body: `{topic_preferences, voice_preferences, per_category_count, ...}`. Generates N cards × every category, cycling voices, then enqueues matching historical cards behind them. |
-| `GET /api/feed?user_id=...`              | Paginated feed queue (filtered to the current `CARD_VERSION`).                                 |
-| `POST /api/interactions`                 | Record `like | dislike | dismiss | view | complete | skip` with optional `view_duration_ms`.   |
-| `POST /api/feed/sync`                    | Append any current-version cards not already in the user's queue. No generation.              |
-| `GET /api/agent/state?user_id=...`       | Weighted affinity per dim (category/topic/hook/voice), interaction count, recent events.      |
-| `POST /api/agent/brief`                  | Re-compute the LLM brief (OpenAI structured output) for the next-gen agent. Not used by the batch path; kept for future experimentation. |
-| `POST /api/agent/generate-next`          | Single LLM-driven card from a brief.                                                          |
-| `POST /api/agent/generate-batch`         | **Deterministic 4-card batch.** Uses the same planner the dashboard previews. Returns enqueued cards. |
-| `GET /api/agent/stats?user_id=...&voice_preferences=…` | Per-category + per-subtopic stats and the live `next_plan.slots`. Drives the dashboard. |
-| `GET /api/agent/voices/custom`           | List of personality voice names (for cycling).                                                |
-| `GET /api/workbench/taxonomy`            | Categories, topics, hook types, voices for both the workbench and the app frontend.           |
-| `POST /api/workbench/generate`           | Manually generate one card with optional prompt / voice overrides. Used by the workbench UI.  |
-| `GET /preview`, `GET /preview/{card_id}` | Server-rendered card preview (for sharing / debugging).                                       |
+**Onboarding — pick what you want to learn.** Each tile is a category in
+the static taxonomy; the illustrations are AI-generated and shared with
+the dashboard ranking flags so the visual language stays consistent.
 
-Static media:
+![Onboarding — categories](docs/screenshots/01-onboarding-categories.png)
 
-- `GET /media/img/<id>.png` — generated card image
-- `GET /media/audio/<id>.wav` — generated narration
-- `GET /partners/{openai.svg, fal.png, gradium-icon.png, gradium.svg}` — partner logos served by Vite from `frontend/public/`
+**Onboarding — pick your voices.** Each option carries a Gradium-cloned
+personality; the agent cycles round-robin through the user's picks when
+generating cards. The big pill at the bottom calls out the voice cloning
+partner.
 
----
+![Onboarding — voice picker](docs/screenshots/02-voice-picker.png)
 
-## Adaptive recommendation — the algorithm
+**Feed + live dashboard.** The portrait card on the left is the active
+TikTok-style item (visual hook overlaid in CSS, narration auto-playing,
+"JUST GENERATED FOR YOU" badge when it came from the GENERATE button).
+The dashboard on the right ranks categories by affinity in real time and
+shows the exact four cards the agent will produce next if you click
+GENERATE NEW CONTENT.
 
-The dashboard's ranking and the batch endpoint's outputs are produced by
-the same deterministic function: `backend/app/agent/planner.py:plan_next_batch`.
-Identical logic is mirrored on the frontend in `Dashboard.tsx` and
-`NextGenPreview.tsx` so what you preview is exactly what gets generated.
-
-**Affinity score per (sub)category** (range 0–100):
-
-```
-affinity = clamp(watch_percentage + 10 × likes − 10 × dislikes, 0, 100)
-```
-
-Where `watch_percentage` is the user's share of total watch time
-attributed to that bucket. The 10× weights are intentionally simple so
-the demo audience can predict score changes in real time.
-
-**Picking the next 4 slots:**
-
-1. Rank ALL categories by affinity DESC. Ties: more `cards_seen`, then
-   alphabetical. Assign ranks `#1..#N` (displayed in the dashboard).
-2. Take the top 4 categories with affinity > 0. If fewer than 4 have
-   any signal, fill from the user's onboarding category list, then from
-   the global category list.
-3. For each picked category, pick a **subtopic**:
-   - Highest-affinity subtopic in `TAXONOMY[cat]`.
-   - If no subtopic signal, the first untouched subtopic from the
-     taxonomy.
-4. Pick a **hook_type** per slot: sort `HOOK_TYPES` globally by user
-   affinity (`db.affinity_breakdown(user_id)["hook_type"]`), slot `i`
-   uses the i-th best. Cold start: declaration order.
-5. Pick a **voice** per slot: round-robin through the user's onboarding
-   voice picks, with the seed offset set to their total interaction
-   count so rotations don't reset between calls.
-
-Affinity-breakdown weights (different signal, used inside the LLM brief
-prompt only — not by the planner):
-
-```
-like     +3.0
-complete +1.0
-view     +0.3
-dislike  −3.0
-skip     −1.0
-dismiss  −2.0
-```
-
----
-
-## Frontend data model
-
-`frontend/src/lib/api.ts` is the typed API surface. Key types:
-
-- `Card` — full card row (id, category, topic, hook_type, visual_hook,
-  script, image_path, audio_path, voice, version, created_at).
-- `Stats` — per-category + per-subtopic watch / like / dislike +
-  `next_plan: { slots: PlanSlot[] }`.
-- `PlanSlot` — the four planned cards: `{rank, category, topic,
-  hook_type, voice, reason}`.
-
-Global state lives in `frontend/src/lib/store.ts` (Zustand):
-
-- `userId`, `categoryPreferences`, `voicePreferences` — persisted to
-  `localStorage` so a refresh keeps the session.
-- `queue: Card[]`, `activeIndex` — feed + the card currently centered.
-- `stats: Stats | null` — refreshed after every interaction.
-- `generatingBatch`, `lastBatchError`, `freshlyGeneratedIds` — power
-  the GENERATE NEW CONTENT button + the "just generated" badge.
-- `generateBatch()` — calls `POST /api/agent/generate-batch`, splices
-  the new cards into `queue[activeIndex + 1:]`, then refetches stats so
-  the dashboard reorders.
-
----
-
-## Project layout
-
-```
-backend/
-├── app/
-│   ├── main.py                       # FastAPI app, mounts /media, lifespan inits DB
-│   ├── config.py                     # pydantic-settings env loader
-│   ├── agent/
-│   │   ├── brief.py                  # OpenAI structured-output brief (used by generate-next)
-│   │   └── planner.py                # deterministic plan_next_batch (single source of truth)
-│   ├── content/
-│   │   ├── generator.py              # OpenAI → gather(fal, gradium) → SQLite orchestrator
-│   │   ├── prompts.py                # SYSTEM_PROMPT + IMAGE_STYLE_PREFIX (edit me)
-│   │   ├── schema.py                 # CardDraft pydantic model for OpenAI structured output
-│   │   ├── topics.py                 # TAXONOMY + HOOK_TYPES + spec strings
-│   │   ├── voices.py                 # VOICES + CUSTOM_VOICES + round-robin picker
-│   │   ├── openai_client.py
-│   │   ├── fal_client.py             # image render with retry + safety-checker fallback
-│   │   └── gradium_client.py         # WebSocket TTS via the gradium SDK + 2-concurrency semaphore
-│   ├── db/
-│   │   ├── schema.sql
-│   │   └── client.py                 # tiny SQLite helpers + idempotent _migrate
-│   └── routes/
-│       ├── agent.py                  # /api/agent/{state,brief,generate-next,generate-batch,stats,voices}
-│       ├── feed.py                   # /api/users · /api/feed · /api/interactions · /api/feed/sync
-│       ├── workbench.py              # /workbench UI + /api/workbench/{taxonomy,generate}
-│       └── preview.py                # /preview/{id} card preview
-├── scripts/
-│   ├── generate_category_images.py   # one-shot: 8 onboarding category illustrations
-│   ├── generate_voice_avatars.py     # one-shot: 4 voice character avatars
-│   └── backfill_card_images.py       # re-renders any cards with NULL image_path
-├── media/{img,audio}/                # generated PNG + WAV (gitignored)
-└── mindscroller.db                   # SQLite single-file (gitignored)
-
-frontend/
-├── public/
-│   └── partners/{openai.svg, fal.png, gradium-icon.png, gradium.svg}
-├── src/
-│   ├── main.tsx
-│   ├── App.tsx                       # stage router: onboarding / warming / feed / error
-│   ├── routes/
-│   │   ├── Onboarding.tsx            # 2-step: categories then voices (avatars + Gradium attribution)
-│   │   ├── Splash.tsx                # "generating your feed" loader with big PartnerStrip
-│   │   └── Feed.tsx                  # scroll-snap container + IntersectionObserver
-│   ├── components/
-│   │   ├── Card.tsx                  # visual_hook overlay, script, partner strip, just-generated badge
-│   │   ├── ActionBar.tsx             # like / dislike right rail
-│   │   ├── AudioControls.tsx         # 56×56 global mute toggle
-│   │   ├── Header.tsx                # MINDSCROLLER brand + card count
-│   │   ├── Dashboard.tsx             # ranked stats, FLIP reorder, generate button
-│   │   ├── NextGenPreview.tsx        # live "NEXT 4 — BASED ON YOU" panel
-│   │   └── PartnerLogos.tsx          # OpenAI / fal.ai / Gradium pill (sm / md / lg sizes)
-│   ├── hooks/
-│   │   ├── useCardPlayback.ts        # IntersectionObserver-driven audio play/pause + 1.15× playbackRate
-│   │   ├── useAudioUnlock.ts         # autoplay-policy first-gesture unlock
-│   │   └── useFlipReorder.ts         # offsetTop-based FLIP animation for ranking changes
-│   ├── lib/
-│   │   ├── api.ts                    # typed fetch wrappers + Card / Stats / PlanSlot types
-│   │   └── store.ts                  # Zustand: session, queue, stats, generateBatch
-│   └── styles/index.css              # Tailwind + brutalist overlay + scroll-snap rules
-├── vite.config.ts                    # /api and /media proxied to :8000
-├── tailwind.config.js
-└── package.json
-```
-
----
-
-## Reset state
-
-To wipe all generated content and start fresh:
-
-```bash
-cd backend
-rm mindscroller.db
-rm -f media/img/*.png media/audio/*.wav
-```
-
-The DB schema and media directories are recreated on next backend boot.
-
-Browser-side session state lives in `localStorage` under
-`mindscroller.userId`, `mindscroller.categoryPreferences`,
-`mindscroller.voicePreferences`, `mindscroller.muted`. Clear them via
-DevTools → Application → Local Storage to force re-onboarding without
-deleting the DB.
-
----
-
-## Design notes
-
-- **The visual hook is HTML, not pixels.** Diffusion models render text,
-  numbers, equations, and symbols as garbled glyph soup. The system
-  prompt and `IMAGE_STYLE_PREFIX` strictly ban all glyphs from the
-  generated image; the actual hook text is overlaid in CSS afterward in
-  the heaviest available sans (Helvetica Neue Black → Arial Black →
-  Impact fallback), with a hard 3px offset shadow.
-- **Image style:** bold editorial illustration, flat vector, strong
-  silhouettes, limited 2–3 color palette, object-anchored visual
-  metaphors. Pure-Bauhaus geometric primitives were tried and rejected —
-  illustrative reads better as thumbnail art.
-- **Card version stamping:** every prompt change bumps `CARD_VERSION` in
-  `backend/app/content/prompts.py`. Older cards stay archived in the DB
-  but are filtered out of every feed query — clean rollback if a prompt
-  iteration regresses.
-- **Narration playback:** muted by default in localStorage flag,
-  IntersectionObserver-driven (one audio playing at a time, paused +
-  reset to 0 on exit), browser `playbackRate = 1.15` for tighter pacing
-  without re-rendering TTS.
-- **Dashboard reorder:** FLIP animation keyed by `offsetTop` (not
-  `getBoundingClientRect().top`) so scrolling the list doesn't trigger
-  the animation — only an actual rank shift does.
-
----
-
-## License
-
-MIT. Hackathon submission, use as you like.
+![Feed and live ranking dashboard](docs/screenshots/03-feed-and-dashboard.png)
