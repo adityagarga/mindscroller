@@ -20,6 +20,11 @@ export const Card = forwardRef<HTMLElement, Props>(function Card(
   const audioRef = useRef<HTMLAudioElement>(null);
   const getAudio = useCallback(() => audioRef.current, []);
   const isFreshlyGenerated = useApp((s) => s.freshlyGeneratedIds.has(card.id));
+  // Mute is global — bind it to the audio element here so React applies it
+  // synchronously on every render. Doing this only in AudioControls' effect
+  // leaves a window where a freshly-mounted card briefly plays unmuted
+  // before the effect runs.
+  const muted = useApp((s) => s.muted);
 
   function flash(kind: "like" | "dislike", fn: () => void) {
     setPressed(kind);
@@ -57,6 +62,7 @@ export const Card = forwardRef<HTMLElement, Props>(function Card(
           src={card.audio_path}
           preload="auto"
           playsInline
+          muted={muted}
         />
       )}
 
@@ -82,12 +88,14 @@ export const Card = forwardRef<HTMLElement, Props>(function Card(
             <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a25] to-[#0d0d12]" />
           )}
 
-          {/* Top-right stack: partner attribution + (optional) freshly-generated
-              badge. Anchored opposite the mute button. */}
-          <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2">
-            <PartnerStrip />
-            {isFreshlyGenerated && <JustGeneratedBadge />}
-          </div>
+          {/* Top-right: just the freshly-generated badge. The partner strip
+              moved to the bottom info panel so its width doesn't overlap the
+              mute button's hit area on narrower cards. */}
+          {isFreshlyGenerated && (
+            <div className="absolute top-3 right-3 z-20">
+              <JustGeneratedBadge />
+            </div>
+          )}
 
           {/* Dim gradient bottom (legibility for script panel) */}
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
@@ -102,8 +110,11 @@ export const Card = forwardRef<HTMLElement, Props>(function Card(
             </h2>
           </div>
 
-          {/* Bottom info panel: chips + script */}
+          {/* Bottom info panel: partner attribution + chips + script */}
           <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 z-10">
+            <div className="mb-3 flex justify-start">
+              <PartnerStrip />
+            </div>
             <div className="flex flex-col items-start gap-1.5 mb-3.5">
               <Chip tone="primary">{card.category}</Chip>
               <Chip tone="secondary">{card.topic}</Chip>

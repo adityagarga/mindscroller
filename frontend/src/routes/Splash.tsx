@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../lib/store";
+import { PartnerStrip } from "../components/PartnerLogos";
 
 const PHASES = [
   "writing your first cards",
@@ -60,8 +61,10 @@ export function Splash() {
         </div>
       )}
 
-      <div className="absolute bottom-10 left-0 right-0 text-center text-[11px] sm:text-xs text-muted px-6">
-        Generating 2 cards per category. This takes ~30s — hold tight.
+      {/* Partner attribution — large pill so the demo audience clearly sees
+          which technologies are powering the loading work. */}
+      <div className="absolute bottom-10 left-0 right-0 flex justify-center px-6">
+        <PartnerStrip size="lg" />
       </div>
     </div>
   );
