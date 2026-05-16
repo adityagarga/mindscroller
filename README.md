@@ -8,30 +8,7 @@ agent loop you can audit live in the dashboard.
 
 Hackathon submission — local-first (SQLite + local media files, no cloud DB).
 
----
-
-## Demo flow
-
-1. **Onboarding step 1.** Pick categories you want to learn about (8 to
-   choose from). Tap **Next**.
-2. **Onboarding step 2.** Pick one or more **voices** for narration.
-   Avatars are AI-generated; the wordmark below the voice list calls out
-   that voice cloning is powered by Gradium.
-3. **Splash.** While the splash plays, the backend generates **2 cards per
-   selected category** in parallel and seeds your queue with matching
-   historical cards behind them. The splash carries a large
-   `POWERED BY OpenAI | fal.ai | Gradium` pill so the audience knows who's
-   doing what.
-4. **Feed.** Vertical scroll-snap. Each card auto-plays its narration when
-   it crosses 70% visibility. The mute toggle (top-left) is global. Like /
-   dislike / skip on the right rail records interactions.
-5. **Dashboard (xl+ screens).** Watch the **ranked categories** reorder
-   with a smooth FLIP animation as you interact. Each row shows a single
-   `0 / 100` affinity score (formula below). Underneath, a live **NEXT 4
-   — BASED ON YOU** preview shows the exact (category, topic, hook type,
-   voice) the agent will produce next. Click **GENERATE NEW CONTENT** to
-   make those 4 cards real; they splice in immediately after the card
-   you're currently watching.
+**Demo video:** https://www.loom.com/share/4968c32d5be94236baef319fd6be18d4
 
 ---
 
@@ -43,9 +20,6 @@ Hackathon submission — local-first (SQLite + local media files, no cloud DB).
 | **fal.ai**    | Image generation from the model-authored prompts  | `backend/app/content/fal_client.py`, model `fal-ai/flux/schnell`, portrait 3:4, retry with safety-checker fallback |
 | **Gradium**   | TTS voice cloning (personality voices)            | `backend/app/content/gradium_client.py`, WebSocket TTS via the official `gradium` SDK, account-wide semaphore at 2 concurrent |
 
-Every content card carries a `POWERED BY OpenAI | fal.ai | Gradium`
-attribution pill above its chips, with the official logo for each partner
-shipped in `frontend/public/partners/`.
 
 ### Voices
 
