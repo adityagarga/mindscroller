@@ -18,11 +18,15 @@ CREATE TABLE IF NOT EXISTS cards (
   parent_card_id TEXT,
   thread_order INTEGER,
   created_for_user TEXT,
+  version TEXT NOT NULL DEFAULT 'v0',
+  voice TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_cards_category ON cards(category);
 CREATE INDEX IF NOT EXISTS idx_cards_topic ON cards(topic);
 CREATE INDEX IF NOT EXISTS idx_cards_parent ON cards(parent_card_id);
+-- idx_cards_version is created by app/db/client.py:_migrate (after ALTER TABLE
+-- on legacy DBs that pre-date the version column).
 
 CREATE TABLE IF NOT EXISTS interactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,3 +45,16 @@ CREATE TABLE IF NOT EXISTS feed_queue (
   PRIMARY KEY (user_id, card_id)
 );
 CREATE INDEX IF NOT EXISTS idx_feed_queue_user_pos ON feed_queue(user_id, position);
+
+-- LLM-proposed subtopics that didn't exist in the static TAXONOMY. The agent
+-- expands the taxonomy dynamically as it generates briefs that pick novel topics.
+CREATE TABLE IF NOT EXISTS discovered_topics (
+  category TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  first_seen_at TEXT DEFAULT (datetime('now')),
+  proposed_by_user TEXT,
+  use_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (category, topic)
+);
+CREATE INDEX IF NOT EXISTS idx_discovered_seen ON discovered_topics(first_seen_at DESC);
+

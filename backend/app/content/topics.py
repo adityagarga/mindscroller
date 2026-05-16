@@ -1,31 +1,89 @@
 """Source of truth for content taxonomy and hook types.
-Surfaced to the workbench UI via GET /api/workbench/taxonomy."""
+
+The TAXONOMY here is the STATIC seed set. The agent expands it dynamically by
+proposing new subtopics during brief generation; those are persisted in the
+`discovered_topics` table and returned alongside the static set from
+`GET /api/topics`.
+
+Surfaced to the workbench UI via GET /api/workbench/taxonomy.
+"""
 
 from __future__ import annotations
 
 
-# Category -> list of topics (leaves) the user selects from.
-# Keep strings verbatim — they flow into the prompt as-is.
+# Category -> list of subtopic leaves the user (and the agent) can pick from.
+# These are the seeds; new subtopics get added dynamically via the agent.
 TAXONOMY: dict[str, list[str]] = {
     "Arts & culture": [
         "French Impressionists",
         "Parisian museums",
         "American movies",
         "American Blues/Jazz",
+        "Renaissance art",
+        "Modernist architecture",
+        "Photography history",
+        "Street art & graffiti",
     ],
     "Literature": [
         "Shakespeare",
         "American novelists",
+        "Russian novelists",
+        "Poetry forms",
+        "Sci-fi & speculative fiction",
+        "Lost / banned books",
     ],
-    "Economics": [
+    "History": [
+        "Ancient civilizations",
+        "Cold War strangeness",
+        "Forgotten women in history",
+        "WWII oddities",
+        "Pre-Columbian Americas",
+        "Medieval Europe weirdness",
+        "Maritime exploration",
+    ],
+    "Science & Nature": [
+        "Animal oddities",
+        "Physics paradoxes",
+        "Space",
+        "Geology & deep time",
+        "Climate & weather extremes",
+        "Evolution surprises",
+        "Mathematics oddities",
+    ],
+    "Tech & Computing": [
+        "Cryptography & codebreaking",
+        "Internet history",
+        "AI history",
+        "Hardware breakthroughs",
+        "Hacker culture",
+        "Open source moments",
+    ],
+    "Economics & money": [
         "US monetary history",
         "French luxury industry",
+        "Bubbles & crashes",
+        "History of currency",
+        "Behavioral economics",
+        "Trade routes",
     ],
-    "General Knowledge": [
-        "Science & nature oddities",
-        "History's weird moments",
+    "Psychology & behavior": [
+        "Cognitive biases",
+        "Memory & false memory",
+        "Sleep & dreams",
+        "Group dynamics & conformity",
+        "Famous psych experiments",
+    ],
+    "Philosophy & big ideas": [
+        "Ancient Greek philosophers",
+        "Game theory",
+        "Thought experiments",
+        "Eastern philosophy",
+        "Linguistics oddities",
     ],
 }
+
+
+CATEGORIES: list[str] = list(TAXONOMY.keys())
 
 
 # Each hook type: a short tagline + an operational rule + a concrete example.
@@ -85,7 +143,14 @@ HOOK_TYPE_SPECS: dict[str, dict[str, str]] = {
 HOOK_TYPES: list[str] = list(HOOK_TYPE_SPECS.keys())
 
 
+def is_valid_category(category: str) -> bool:
+    return category in TAXONOMY
+
+
 def is_valid(category: str, topic: str, hook_type: str) -> bool:
+    """Strict validation against the STATIC taxonomy. The agent's brief can
+    propose new topics outside this set; those are persisted and validated
+    only by category (must be a known category) elsewhere."""
     return (
         category in TAXONOMY
         and topic in TAXONOMY[category]

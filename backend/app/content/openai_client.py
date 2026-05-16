@@ -19,16 +19,18 @@ async def generate_card_draft(
     category: str,
     topic: str,
     hook_type: str,
+    angle: str | None = None,
     system_prompt: str | None = None,
 ) -> CardDraft:
     """Single OpenAI call with structured outputs → CardDraft (visual_hook + script + image_prompt).
-    Pass `system_prompt` to override the default SYSTEM_PROMPT (used by the workbench)."""
+    Pass `system_prompt` to override the default SYSTEM_PROMPT (used by the workbench).
+    Pass `angle` to steer the script writer with the agent's chosen framing."""
     client = _get_client()
     resp = await client.beta.chat.completions.parse(
         model=settings.openai_model,
         messages=[
             {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt(category, topic, hook_type)},
+            {"role": "user", "content": user_prompt(category, topic, hook_type, angle=angle)},
         ],
         response_format=CardDraft,
         temperature=0.9,

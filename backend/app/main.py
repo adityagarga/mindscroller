@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import MEDIA_DIR
 from app.db.client import init_db
-from app.routes import preview, workbench
+from app.routes import agent, feed, preview, workbench
 
 
 @asynccontextmanager
@@ -32,8 +32,24 @@ app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
 
 app.include_router(preview.router)
 app.include_router(workbench.router)
+app.include_router(feed.router)
+app.include_router(agent.router)
 
 
 @app.get("/")
 async def root() -> dict:
-    return {"ok": True, "workbench": "/workbench", "preview": "/preview"}
+    return {
+        "ok": True,
+        "workbench": "/workbench",
+        "preview": "/preview",
+        "feed_api": {
+            "create_user": "POST /api/users",
+            "get_feed": "GET /api/feed?user_id=...",
+            "interaction": "POST /api/interactions",
+        },
+        "agent_api": {
+            "state": "GET /api/agent/state?user_id=...",
+            "brief": "POST /api/agent/brief?user_id=...",
+            "generate_next": "POST /api/agent/generate-next",
+        },
+    }

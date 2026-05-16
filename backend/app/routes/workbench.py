@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.content.generator import generate_card
 from app.content.prompts import IMAGE_STYLE_PREFIX, SYSTEM_PROMPT
 from app.content.topics import HOOK_TYPE_SPECS, HOOK_TYPES, TAXONOMY, is_valid
+from app.content.voices import DEFAULT_VOICE, VOICES
 
 
 router = APIRouter()
@@ -35,6 +36,8 @@ async def get_taxonomy() -> dict:
         "taxonomy": TAXONOMY,
         "hook_types": HOOK_TYPES,
         "hook_type_specs": HOOK_TYPE_SPECS,
+        "voices": VOICES,
+        "default_voice": DEFAULT_VOICE,
     }
 
 
@@ -42,6 +45,7 @@ class WorkbenchGenerateRequest(BaseModel):
     category: str
     topic: str
     hook_type: str
+    voice: str | None = None  # friendly name; resolved against VOICES on the backend
     system_prompt: str | None = None
     style_prefix: str | None = None
     skip_audio: bool = True
@@ -63,6 +67,7 @@ async def post_generate(req: WorkbenchGenerateRequest) -> dict:
         skip_image=req.skip_image,
         system_prompt_override=req.system_prompt,
         style_prefix_override=req.style_prefix,
+        voice=req.voice,
     )
     return {"card": card}
 
@@ -183,6 +188,16 @@ _HTML = r"""<!doctype html>
       </div>
     </div>
 
+    <div class="grid3">
+      <div style="grid-column: 1 / 3;">
+        <label>voice (Gradium TTS)</label>
+        <select id="voice"></select>
+      </div>
+      <div style="grid-column: 3 / 4; display: flex; align-items: end;">
+        <span id="voiceDesc" class="status" style="line-height: 1.4;"></span>
+      </div>
+    </div>
+
     <div class="hint" id="hookHint"></div>
 
     <div class="checks">
@@ -233,9 +248,11 @@ const LS = {
   category: "mindscroller.workbench.category",
   topic: "mindscroller.workbench.topic",
   hookType: "mindscroller.workbench.hookType",
+  voice: "mindscroller.workbench.voice",
 };
 let defaults = { system_prompt: "", style_prefix: "" };
 let taxonomy = {}; let hookTypes = []; let hookSpecs = {};
+let voices = {}; let defaultVoice = "";
 let history = JSON.parse(localStorage.getItem(LS.history) || "[]");
 
 async function init() {
@@ -247,6 +264,8 @@ async function init() {
   taxonomy = taxR.taxonomy;
   hookTypes = taxR.hook_types;
   hookSpecs = taxR.hook_type_specs || {};
+  voices = taxR.voices || {};
+  defaultVoice = taxR.default_voice || "";
 
   // prompts (with localStorage overrides)
   $("sys").value = localStorage.getItem(LS.sys) ?? defaults.system_prompt;
@@ -274,6 +293,16 @@ async function init() {
     renderHookHint();
   });
   renderHookHint();
+
+  // voice dropdown
+  const voiceNames = Object.keys(voices);
+  $("voice").innerHTML = voiceNames.map(n => `<option>${escapeHtml(n)}</option>`).join("");
+  $("voice").value = localStorage.getItem(LS.voice) || defaultVoice || voiceNames[0] || "";
+  $("voice").addEventListener("change", () => {
+    localStorage.setItem(LS.voice, $("voice").value);
+    renderVoiceDesc();
+  });
+  renderVoiceDesc();
 
   // buttons
   $("generate").addEventListener("click", onGenerate);
@@ -304,6 +333,11 @@ function renderHookHint() {
     <span class="rule">${escapeHtml(spec.rule)}</span>
     <span class="ex">${escapeHtml(spec.example)}</span>
   `;
+}
+
+function renderVoiceDesc() {
+  const v = voices[$("voice").value];
+  $("voiceDesc").textContent = v ? v.description : "";
 }
 
 function populateTopics() {
@@ -350,6 +384,7 @@ async function onGenerate() {
         category: $("category").value,
         topic: $("topic").value,
         hook_type: $("hookType").value,
+        voice: $("voice").value,
         system_prompt: $("sys").value,
         style_prefix: $("prefix").value,
         skip_audio: $("skipAudio").checked,
@@ -395,6 +430,8 @@ function renderCard(card) {
         <span class="cat">${escapeHtml(card.category)}</span>
         <span class="topic">${escapeHtml(card.topic)}</span>
         <span class="hook">hook: ${escapeHtml(card.hook_type)}</span>
+        ${card.version ? `<span title="prompt version">${escapeHtml(card.version)}</span>` : ""}
+        ${card.voice ? `<span title="Gradium voice">🎙 ${escapeHtml(card.voice)}</span>` : ""}
         <span>${hookWordCount}w hook · ${wordCount}w script</span>
       </div>
       <div class="img-wrap ${card.image_path ? "" : "no-img"}">

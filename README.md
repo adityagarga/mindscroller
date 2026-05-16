@@ -8,7 +8,7 @@ Built for a hackathon — local-first (SQLite + local media files, no cloud DB).
 
 - [x] **Phase 1** — content generation engine (OpenAI → fal.ai → Gradium → SQLite).
 - [x] **Phase 1.5** — interactive prompt workbench at `/workbench`.
-- [ ] **Phase 2** — vertical-scroll feed UI (Vite + React).
+- [x] **Phase 2** — vertical-scroll feed UI (Vite + React + TS + Tailwind + Zustand).
 - [ ] **Phase 3** — adaptive recommendation engine.
 
 ## What it generates
@@ -105,6 +105,10 @@ GRADIUM_VOICE_ID=RhI-l8fGE2DtXgXV   # Wren (catalog voice, deep + professional)
 
 ## Run
 
+Two terminals — backend on `:8000`, frontend on `:5173`.
+
+**Terminal A — backend:**
+
 ```bash
 cd backend
 source .venv/bin/activate
@@ -113,14 +117,38 @@ uvicorn app.main:app --reload --reload-dir app --port 8000 --log-level info
 
 `--reload-dir app` is critical: without it, uvicorn watches `.venv` and reloads itself whenever pip writes there.
 
-Then open **http://localhost:8000/workbench**.
+**Terminal B — frontend:**
 
-Other routes:
+```bash
+cd frontend
+npm install   # first run only
+npm run dev
+```
 
-- `GET /preview` — index of all generated cards (server-rendered)
-- `GET /preview/{id}` — single card preview
-- `GET /api/workbench/taxonomy` — taxonomy + hook type specs as JSON
+Then open **http://localhost:5173** for the actual app (the TikTok-style feed). The Vite dev server proxies `/api` and `/media` to the backend, so they share an origin from the browser's perspective.
+
+The developer workbench remains at **http://localhost:8000/workbench**.
+
+Routes (backend):
+
+- `GET /` — service index
+- `GET /preview`, `GET /preview/{id}` — server-rendered card previews
+- `GET /workbench` — prompt iteration UI
+- `GET /api/workbench/taxonomy` — taxonomy + hook type specs
 - `POST /api/workbench/generate` — generate a card with optional prompt overrides
+- `POST /api/users` — create anonymous user, generate 5 cold-start cards in parallel
+- `GET /api/feed?user_id=...` — paginated feed queue for a user
+- `POST /api/interactions` — record `{like, dislike, dismiss, view, complete, skip}`
+- `POST /api/feed/refill` — fire-and-forget background queue top-up
+
+## Phase 2 — what the app actually does
+
+1. **Onboarding:** pick topics (multi-select chips grouped by category). Tap Start.
+2. **Cold start:** `POST /api/users` generates 5 cards in parallel from your picks. Splash screen: "warming up your feed" (~8-12s).
+3. **Feed:** vertical scroll-snap. The `visual_hook` overlays the image in brutalist all-caps. The `script` and meta chips sit in a bottom panel. Audio auto-plays when a card crosses 70% visibility; pauses + resets when it leaves. Only one audio is ever playing.
+4. **Actions:** right rail has 💗 like / 👎 dislike / ✕ skip. Each fires `POST /api/interactions`. Skip auto-scrolls to the next card.
+5. **Background refill:** when you're 3 cards from the end, the app fires `POST /api/feed/refill` — backend generates 3 more cards (currently sampling randomly from your topic preferences; Phase 3 will make this adaptive).
+6. **Session:** anonymous UUID lives in `localStorage` (`mindscroller.userId`). Visit the app again from the same browser and you pick up where you left off.
 
 ## Reset state
 
@@ -152,9 +180,31 @@ backend/
 │   │   └── client.py
 │   └── routes/
 │       ├── workbench.py       # GET /workbench + /api/workbench/{defaults,taxonomy,generate}
+│       ├── feed.py            # POST /api/users · GET /api/feed · POST /api/interactions · POST /api/feed/refill
 │       └── preview.py         # GET /preview, /preview/{id}
 ├── media/{img,audio}/         # generated PNG + WAV (gitignored)
 └── mindscroller.db            # SQLite single-file (gitignored)
+
+frontend/
+├── src/
+│   ├── main.tsx               # React entry
+│   ├── App.tsx                # stage router: onboarding / warming / feed / error
+│   ├── routes/
+│   │   ├── Onboarding.tsx     # topic chip picker
+│   │   ├── Splash.tsx         # "warming up your feed" loader
+│   │   └── Feed.tsx           # scroll-snap container + IntersectionObserver
+│   ├── components/
+│   │   ├── Card.tsx           # full-viewport card with brutalist hook overlay
+│   │   └── ActionBar.tsx      # like / dislike / skip right rail
+│   ├── hooks/
+│   │   └── useCardPlayback.ts # audio play/pause on viewport entry
+│   ├── lib/
+│   │   ├── api.ts             # typed fetch wrappers
+│   │   └── store.ts           # Zustand store + session/queue/refill
+│   └── styles/index.css       # Tailwind + brutalist overlay class + scroll-snap rules
+├── vite.config.ts             # /api and /media proxied to :8000
+├── tailwind.config.js
+└── package.json
 ```
 
 ## Design notes
