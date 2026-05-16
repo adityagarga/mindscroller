@@ -21,15 +21,29 @@ interface AppState {
   categoryPreferences: string[];
   voicePreferences: string[];
   queue: Card[];
+  /** Index of the card currently centered in the feed. Used by generateBatch
+   * to splice fresh cards in immediately after the active one. */
+  activeIndex: number;
   currentVersion: string;
   error: string | null;
 
   stats: Stats | null;
   muted: boolean;
 
+  /** True while the batch endpoint is in flight. Disables the FAB. */
+  generatingBatch: boolean;
+  lastBatchError: string | null;
+  /** IDs of cards produced by /api/agent/generate-batch in this session, so
+   * the Card UI can tag them as freshly generated. Cleared on resetSession. */
+  freshlyGeneratedIds: Set<string>;
+
   hydrate: () => Promise<void>;
   beginColdStart: (categories: string[], voices?: string[]) => Promise<void>;
   fetchStats: () => Promise<void>;
+  setActiveIndex: (i: number) => void;
+  /** Trigger deterministic batch generation and splice the result into the
+   * queue at activeIndex + 1. */
+  generateBatch: () => Promise<void>;
   /** Called after every user interaction so the stats panel stays live. */
   onInteractionRecorded: () => Promise<void>;
   toggleMute: () => void;
@@ -43,11 +57,16 @@ export const useApp = create<AppState>((set, get) => ({
   categoryPreferences: [],
   voicePreferences: [],
   queue: [],
+  activeIndex: 0,
   currentVersion: "",
   error: null,
 
   stats: null,
   muted: localStorage.getItem(LS_MUTED_KEY) === "1",
+
+  generatingBatch: false,
+  lastBatchError: null,
+  freshlyGeneratedIds: new Set<string>(),
 
   hydrate: async () => {
     const userId = localStorage.getItem(LS_USER_KEY);
@@ -101,10 +120,42 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   fetchStats: async () => {
-    const { userId } = get();
+    const { userId, voicePreferences } = get();
     if (!userId) return;
-    const s = await api.stats(userId);
+    const s = await api.stats(userId, voicePreferences);
     set({ stats: s });
+  },
+
+  setActiveIndex: (i) => set({ activeIndex: i }),
+
+  generateBatch: async () => {
+    const { userId, voicePreferences, queue, activeIndex, generatingBatch } = get();
+    if (!userId || generatingBatch) return;
+    set({ generatingBatch: true, lastBatchError: null });
+    try {
+      const { cards } = await api.agentGenerateBatch(userId, 4, voicePreferences);
+      // Splice the new cards in immediately after the currently active one so
+      // the next swipe lands on a fresh, personalized card.
+      const insertAt = Math.min(queue.length, Math.max(0, activeIndex) + 1);
+      const nextQueue = [
+        ...queue.slice(0, insertAt),
+        ...cards,
+        ...queue.slice(insertAt),
+      ];
+      const nextFresh = new Set(get().freshlyGeneratedIds);
+      for (const c of cards) nextFresh.add(c.id);
+      set({
+        queue: nextQueue,
+        freshlyGeneratedIds: nextFresh,
+        generatingBatch: false,
+      });
+      // Refresh stats so the Next-Gen preview reflects the new feed-state
+      // (and any rank shifts once the user starts interacting with the new
+      // cards).
+      get().fetchStats().catch((e) => console.warn("post-batch stats refresh failed", e));
+    } catch (e: any) {
+      set({ generatingBatch: false, lastBatchError: String(e?.message ?? e) });
+    }
   },
 
   onInteractionRecorded: async () => {
@@ -130,6 +181,7 @@ export const useApp = create<AppState>((set, get) => ({
       queue: [],
       stats: null,
       error: null,
+      freshlyGeneratedIds: new Set<string>(),
     });
   },
 

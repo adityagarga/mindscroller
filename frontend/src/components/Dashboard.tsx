@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { type CategoryStat, type StatRow } from "../lib/api";
+import { useFlipReorder } from "../hooks/useFlipReorder";
 import { useApp } from "../lib/store";
+import { NextGenPreview } from "./NextGenPreview";
 
 // Affinity score per (sub)category — the single number the agent will consume
 // when deciding what to generate next. Linear blend of two signals:
@@ -39,15 +41,33 @@ function computeAffinity(s: StatRow): AffinityBreakdown {
 export function Dashboard() {
   const stats = useApp((s) => s.stats);
   const fetchStats = useApp((s) => s.fetchStats);
+  const generatingBatch = useApp((s) => s.generatingBatch);
 
   useEffect(() => {
     if (!stats) fetchStats().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Rank categories DESC by affinity. Ties broken by (more cards_seen,
+  // alphabetical). Mirrors backend planner so the rank shown matches the
+  // rank used for next-gen planning.
+  const rankedCategories = useMemo(() => {
+    if (!stats) return [];
+    return [...stats.categories]
+      .map((c) => ({ cat: c, affinity: computeAffinity(c).total }))
+      .sort((a, b) => {
+        if (b.affinity !== a.affinity) return b.affinity - a.affinity;
+        if (b.cat.cards_seen !== a.cat.cards_seen) return b.cat.cards_seen - a.cat.cards_seen;
+        return a.cat.name.localeCompare(b.cat.name);
+      })
+      .map((r, i) => ({ rank: i + 1, cat: r.cat }));
+  }, [stats]);
+
+  const nextSlots = stats?.next_plan?.slots ?? [];
+
   return (
     <aside
-      className="fixed top-0 right-0 z-30 h-[100dvh] w-[560px] flex-col
+      className="fixed top-0 right-0 z-30 h-[100dvh] w-[680px] flex-col
                  bg-panel/95 backdrop-blur-md border-l border-border
                  hidden xl:flex"
     >
@@ -76,31 +96,59 @@ export function Dashboard() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-3.5">
-        {!stats || stats.categories.length === 0 ? (
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-3.5">
+        {!stats || rankedCategories.length === 0 ? (
           <div className="text-base text-white/60 italic px-2 mt-4 leading-relaxed">
             Start swiping. As you watch and react, this panel fills in with the
             share of your watch time and your likes / dislikes per category and
             subtopic.
           </div>
         ) : (
-          stats.categories.map((c) => <CategoryRow key={c.name} cat={c} />)
+          rankedCategories.map(({ rank, cat }) => (
+            <CategoryRow key={cat.name} cat={cat} rank={rank} />
+          ))
         )}
       </div>
+
+      <NextGenPreview slots={nextSlots} generating={generatingBatch} />
     </aside>
   );
 }
 
-function CategoryRow({ cat }: { cat: CategoryStat }) {
+function CategoryRow({ cat, rank }: { cat: CategoryStat; rank: number }) {
   const [open, setOpen] = useState(false);
   const hasSubs = cat.subtopics.length > 0;
+  const ref = useFlipReorder<HTMLDivElement>(cat.name);
   return (
-    <div className="rounded-xl bg-white/[0.04] hover:bg-white/[0.07] transition-colors">
+    <div
+      ref={ref}
+      className="rounded-xl bg-white/[0.04] hover:bg-white/[0.07] transition-colors"
+    >
       <button
         onClick={() => hasSubs && setOpen((v) => !v)}
-        className="w-full px-6 py-5 text-left"
+        className="w-full px-5 py-4 text-left flex gap-4 items-stretch"
         disabled={!hasSubs}
       >
+        {/* Rank flag — brutalist square block on the left. Color intensifies
+            with rank #1 so the demo viewer sees who's on top at a glance. */}
+        <div
+          className={
+            "shrink-0 flex items-center justify-center w-12 self-stretch " +
+            (rank === 1
+              ? "bg-gradient-to-br from-violet-400 to-fuchsia-400"
+              : rank === 2
+                ? "bg-violet-500/70"
+                : rank === 3
+                  ? "bg-violet-600/60"
+                  : "bg-white/10")
+          }
+        >
+          <span className="brutal-overlay text-ink text-[22px] leading-none">
+            #{rank}
+          </span>
+        </div>
+
+        <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-3 mb-3">
           <span className="text-[26px] text-white font-bold truncate tracking-tight leading-tight">
             {cat.name}
@@ -121,10 +169,13 @@ function CategoryRow({ cat }: { cat: CategoryStat }) {
             )}
           </span>
         </div>
-        <AffinityBar row={cat} />
-        <AffinityCaption row={cat} />
-        <div className="flex justify-between text-[14px] text-white/45 mt-1.5 tabular-nums">
+        <div className="flex items-center gap-4">
+          <ScoreBar row={cat} />
+          <ScoreNumber row={cat} />
+        </div>
+        <div className="flex justify-between text-[14px] text-white/45 mt-2 tabular-nums">
           <span>{cat.cards_seen} cards · {fmtMs(cat.watch_ms)}</span>
+        </div>
         </div>
       </button>
 
@@ -147,9 +198,11 @@ function CategoryRow({ cat }: { cat: CategoryStat }) {
                   </span>
                 </span>
               </div>
-              <AffinityBar row={s} thin />
-              <AffinityCaption row={s} compact />
-              <div className="flex justify-between text-[11px] text-white/40 mt-1 tabular-nums">
+              <div className="flex items-center gap-3">
+                <ScoreBar row={s} thin />
+                <ScoreNumber row={s} compact />
+              </div>
+              <div className="flex justify-between text-[11px] text-white/40 mt-1.5 tabular-nums">
                 <span>{s.cards_seen} · {fmtMs(s.watch_ms)}</span>
               </div>
             </div>
@@ -160,45 +213,36 @@ function CategoryRow({ cat }: { cat: CategoryStat }) {
   );
 }
 
-// Stacked affinity bar: violet segment = watch share, emerald segment = like
-// bonus stacked on top. Dislike penalty shrinks the total (visible as the
-// unfilled tail) and is surfaced numerically in the caption below.
-function AffinityBar({ row, thin = false }: { row: StatRow; thin?: boolean }) {
+// Single-color score bar. Same formula as before
+// (watch% + 10×likes − 10×dislikes, clamped 0..100) — just rendered as a
+// straightforward 0→100 points indicator instead of a stacked breakdown.
+function ScoreBar({ row, thin = false }: { row: StatRow; thin?: boolean }) {
   const a = computeAffinity(row);
   return (
     <div
       className={
-        (thin ? "h-2.5 " : "h-3.5 ") +
-        "rounded-full bg-white/5 overflow-hidden flex relative"
+        (thin ? "h-3 " : "h-4 ") +
+        "flex-1 rounded-full bg-white/5 overflow-hidden"
       }
     >
       <div
         className="h-full bg-gradient-to-r from-violet-400 to-fuchsia-400 transition-all duration-500"
-        style={{ width: `${a.watchVisible}%` }}
-      />
-      <div
-        className="h-full bg-gradient-to-r from-emerald-400 to-lime-300 transition-all duration-500"
-        style={{ width: `${a.likeVisible}%` }}
+        style={{ width: `${a.total}%` }}
       />
     </div>
   );
 }
 
-function AffinityCaption({ row, compact = false }: { row: StatRow; compact?: boolean }) {
+function ScoreNumber({ row, compact = false }: { row: StatRow; compact?: boolean }) {
   const a = computeAffinity(row);
-  const size = compact ? "text-[12px]" : "text-[14px]";
-  const totalSize = compact ? "text-[16px]" : "text-[20px]";
+  const big = compact ? "text-[24px]" : "text-[36px]";
+  const max = compact ? "text-[12px]" : "text-[14px]";
   return (
-    <div className={"flex items-center justify-between gap-2 mt-2 tabular-nums " + size}>
-      <span className="flex items-center gap-2 flex-wrap text-white/65 font-semibold">
-        <span className="text-violet-300">watch {row.watch_percentage.toFixed(0)}%</span>
-        {a.bonus > 0 && <span className="text-emerald-300">+ ♥{a.bonus}</span>}
-        {a.penalty > 0 && <span className="text-rose-300">− 👎{a.penalty}</span>}
-      </span>
-      <span className={"font-black text-white " + totalSize + " leading-none"}>
+    <div className="shrink-0 flex items-baseline gap-1 tabular-nums leading-none">
+      <span className={"brutal-overlay text-white " + big}>
         {a.total.toFixed(0)}
-        <span className="text-white/45 text-[0.6em] ml-0.5">aff</span>
       </span>
+      <span className={"text-white/40 font-bold " + max}>/ 100</span>
     </div>
   );
 }

@@ -10,7 +10,7 @@ export function Header() {
       className="fixed top-0 left-0 z-40 px-4 pt-[max(10px,env(safe-area-inset-top))] pb-2.5
                  flex items-center justify-between
                  bg-gradient-to-b from-black/85 via-black/55 to-transparent
-                 w-full xl:w-[calc(100vw-560px)]"
+                 w-full xl:w-[calc(100vw-680px)]"
     >
       <span
         className="brutal-overlay text-white select-none"

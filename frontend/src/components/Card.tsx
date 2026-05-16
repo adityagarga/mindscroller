@@ -1,7 +1,9 @@
 import { forwardRef, useCallback, useRef, useState } from "react";
 import { type Card as CardT } from "../lib/api";
+import { useApp } from "../lib/store";
 import { ActionBar } from "./ActionBar";
 import { AudioControls } from "./AudioControls";
+import { PartnerStrip } from "./PartnerLogos";
 
 type Props = {
   card: CardT;
@@ -17,6 +19,7 @@ export const Card = forwardRef<HTMLElement, Props>(function Card(
   const [pressed, setPressed] = useState<"like" | "dislike" | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const getAudio = useCallback(() => audioRef.current, []);
+  const isFreshlyGenerated = useApp((s) => s.freshlyGeneratedIds.has(card.id));
 
   function flash(kind: "like" | "dislike", fn: () => void) {
     setPressed(kind);
@@ -78,6 +81,13 @@ export const Card = forwardRef<HTMLElement, Props>(function Card(
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a25] to-[#0d0d12]" />
           )}
+
+          {/* Top-right stack: partner attribution + (optional) freshly-generated
+              badge. Anchored opposite the mute button. */}
+          <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2">
+            <PartnerStrip />
+            {isFreshlyGenerated && <JustGeneratedBadge />}
+          </div>
 
           {/* Dim gradient bottom (legibility for script panel) */}
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
@@ -154,6 +164,27 @@ function Chip({
     >
       <span className={"w-2.5 shrink-0 " + t.block} />
       <span className="px-3 py-2 leading-none flex items-center">{children}</span>
+    </span>
+  );
+}
+
+// Prominent "this card was just generated for you" badge. Lives directly
+// under the partner strip in the card's top-right so the connection to
+// "you just clicked GENERATE NEW CONTENT" is unmissable.
+function JustGeneratedBadge() {
+  return (
+    <span
+      title="Generated for you just now"
+      className="inline-flex items-stretch border-2 border-emerald-300
+                 bg-emerald-400 text-ink
+                 text-[15px] font-black tracking-[0.08em] uppercase
+                 shadow-[3px_3px_0_rgba(0,0,0,0.6)]"
+    >
+      <span className="w-3 shrink-0 bg-ink" />
+      <span className="px-3.5 py-2.5 leading-none flex items-center gap-2">
+        <span className="inline-block w-2.5 h-2.5 rounded-full bg-ink animate-pulse" />
+        ✨ Just generated for you
+      </span>
     </span>
   );
 }

@@ -15,11 +15,15 @@ const NARRATION_RATE = 1.15;
 
 type Options = {
   containerRef: React.RefObject<HTMLElement>;
+  /** Number of cards currently rendered. The effect re-runs when this changes
+   * so the IntersectionObserver re-attaches to newly-spliced-in cards
+   * (otherwise mid-feed inserts wouldn't trigger play/pause for new entries). */
+  cardCount: number;
   onActiveChange?: (cardId: string | null) => void;
   onComplete?: (cardId: string, durationMs: number) => void;
 };
 
-export function useCardPlayback({ containerRef, onActiveChange, onComplete }: Options) {
+export function useCardPlayback({ containerRef, cardCount, onActiveChange, onComplete }: Options) {
   const activeRef = useRef<HTMLAudioElement | null>(null);
   const enterTimeRef = useRef<Map<string, number>>(new Map());
 
@@ -75,7 +79,8 @@ export function useCardPlayback({ containerRef, onActiveChange, onComplete }: Op
 
     cards.forEach((c) => observer.observe(c));
     return () => observer.disconnect();
-    // Re-run if the cards list mutates — Feed passes a stable container and
-    // re-renders cards in place, so we hook on container identity.
-  }, [containerRef, onActiveChange, onComplete]);
+    // Re-run when the cards list grows/shrinks so freshly-spliced cards get
+    // observed. (Reordering won't trigger this if the count stays the same,
+    // but we never reorder mid-feed today — splicing is the only operation.)
+  }, [containerRef, cardCount, onActiveChange, onComplete]);
 }

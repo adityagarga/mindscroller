@@ -94,12 +94,25 @@ export type CategoryStat = StatRow & {
   subtopics: StatRow[];
 };
 
+// One row in the dashboard's Next-Gen bucket — exactly what the agent will
+// generate if you click the FAB right now. Backend's planner is the single
+// source of truth (backend/app/agent/planner.py).
+export type PlanSlot = {
+  rank: number;
+  category: string;
+  topic: string;
+  hook_type: string;
+  voice: string;
+  reason: string;
+};
+
 export type Stats = {
   categories: CategoryStat[];
   total_watch_ms: number;
   total_likes: number;
   total_dislikes: number;
   total_cards_seen: number;
+  next_plan: { slots: PlanSlot[] };
 };
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -189,6 +202,24 @@ export const api = {
       { method: "POST", body: JSON.stringify({ user_id, brief: brief ?? null }) },
     ),
 
-  stats: (user_id: string) =>
-    jsonFetch<Stats>(`/api/agent/stats?user_id=${encodeURIComponent(user_id)}`),
+  stats: (user_id: string, voice_preferences: string[] = []) => {
+    const params = new URLSearchParams({ user_id });
+    for (const v of voice_preferences) params.append("voice_preferences", v);
+    return jsonFetch<Stats>(`/api/agent/stats?${params.toString()}`);
+  },
+
+  agentGenerateBatch: (
+    user_id: string,
+    n = 4,
+    voice_preferences: string[] = [],
+  ) =>
+    jsonFetch<{
+      cards: Card[];
+      slots: PlanSlot[];
+      snapshot: AgentState;
+      failed: number;
+    }>("/api/agent/generate-batch", {
+      method: "POST",
+      body: JSON.stringify({ user_id, n, voice_preferences }),
+    }),
 };

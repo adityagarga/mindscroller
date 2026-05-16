@@ -11,6 +11,7 @@ export function Feed() {
   const queue = useApp((s) => s.queue);
   const userId = useApp((s) => s.userId);
   const onInteractionRecorded = useApp((s) => s.onInteractionRecorded);
+  const setActiveIndex = useApp((s) => s.setActiveIndex);
 
   const containerRef = useRef<HTMLElement>(null);
   const [, setActiveId] = useState<string | null>(null);
@@ -29,12 +30,21 @@ export function Feed() {
     [userId, onInteractionRecorded],
   );
 
+  // Keep store.activeIndex in sync with the visible card. The batch generator
+  // splices new cards in at activeIndex + 1, so this must be live.
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
+
   const onActiveChange = useCallback(
     (id: string | null) => {
       setActiveId(id);
-      if (id) recordInteraction(id, "view");
+      if (id) {
+        recordInteraction(id, "view");
+        const idx = queueRef.current.findIndex((c) => c.id === id);
+        if (idx >= 0) setActiveIndex(idx);
+      }
     },
-    [recordInteraction],
+    [recordInteraction, setActiveIndex],
   );
 
   const onComplete = useCallback(
@@ -42,7 +52,12 @@ export function Feed() {
     [recordInteraction],
   );
 
-  useCardPlayback({ containerRef, onActiveChange, onComplete });
+  useCardPlayback({
+    containerRef,
+    cardCount: queue.length,
+    onActiveChange,
+    onComplete,
+  });
   useAudioUnlock(containerRef);
 
   useEffect(() => {
@@ -82,7 +97,7 @@ export function Feed() {
           itself is capped at a mobile-shaped 440px (see Card.tsx). */}
       <section
         ref={containerRef}
-        className="feed xl:!w-[calc(100vw-560px)]"
+        className="feed xl:!w-[calc(100vw-680px)]"
       >
         {queue.map((c) => (
           <Card

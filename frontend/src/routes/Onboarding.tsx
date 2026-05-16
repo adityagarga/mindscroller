@@ -15,14 +15,16 @@ const CATEGORY_STYLE: Record<string, { slug: string; accent: string }> = {
   "Philosophy & big ideas": { slug: "philosophy", accent: "from-slate-800/70 to-slate-950/90" },
 };
 
-// Voice → emoji accent. Pure visual hint; the backend resolves the name to a
-// Gradium voice_id. "Wren" is the catalog default and is excluded so users pick
-// from the personality clones (matches backend CUSTOM_VOICES list).
-const VOICE_STYLE: Record<string, { emoji: string; tag: string }> = {
-  "Rhyme Master": { emoji: "🎤", tag: "Punchy, rhythm-forward" },
-  "The Cool Uncle": { emoji: "🍷", tag: "Warm, storytelling" },
-  "Voice of God": { emoji: "⚡", tag: "Booming, cinematic" },
-  "Rasta Rapper": { emoji: "🌴", tag: "Laid-back, inspirational" },
+// Voice metadata. `slug` selects the pre-rendered avatar in
+// /media/img/_voice_<slug>.png (generated once by
+// backend/scripts/generate_voice_avatars.py). The backend resolves the name
+// to a Gradium voice_id. "Wren" (catalog default) is excluded so users pick
+// from the personality clones; matches backend CUSTOM_VOICES.
+const VOICE_STYLE: Record<string, { slug: string; tag: string; accent: string }> = {
+  "Rhyme Master":   { slug: "rhyme_master",   tag: "Punchy, rhythm-forward", accent: "ring-rose-400/60" },
+  "The Cool Uncle": { slug: "the_cool_uncle", tag: "Warm, storytelling",     accent: "ring-amber-400/60" },
+  "Voice of God":   { slug: "voice_of_god",   tag: "Booming, cinematic",     accent: "ring-sky-400/60" },
+  "Rasta Rapper":   { slug: "rasta_rapper",   tag: "Laid-back, inspirational", accent: "ring-orange-400/60" },
 };
 
 function Logo({ className = "" }: { className?: string }) {
@@ -263,35 +265,90 @@ function VoiceStep({
       </p>
 
       <div className="flex-1 min-h-0 px-4 sm:px-5 overflow-y-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="flex flex-col gap-3">
           {voices.map((v) => {
             const on = selected.has(v);
-            const meta = VOICE_STYLE[v] ?? { emoji: "🎙", tag: "" };
+            const meta = VOICE_STYLE[v] ?? { slug: "rhyme_master", tag: "", accent: "ring-white/20" };
             return (
               <button
                 key={v}
                 onClick={() => onToggle(v)}
                 className={
-                  "relative rounded-2xl p-4 sm:p-5 text-left transition-all border-2 " +
+                  "group relative overflow-hidden rounded-3xl p-4 sm:p-5 text-left " +
+                  "transition-all duration-200 border-2 " +
                   (on
-                    ? "border-white bg-white/[0.08] scale-[0.99]"
-                    : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/25")
+                    ? "border-white bg-gradient-to-r from-white/[0.10] to-white/[0.03] " +
+                      "shadow-[0_0_0_5px_rgba(255,255,255,0.06)]"
+                    : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/30 hover:scale-[1.005]")
                 }
               >
-                <div className="flex items-center gap-3">
-                  <div className="text-[28px] sm:text-[32px] shrink-0 leading-none">{meta.emoji}</div>
+                {/* Soft accent glow when selected — same hue as the avatar ring. */}
+                {on && (
+                  <div
+                    className={
+                      "absolute inset-0 rounded-3xl pointer-events-none opacity-40 " +
+                      "bg-gradient-to-r " +
+                      (meta.accent.includes("rose")
+                        ? "from-rose-400/30"
+                        : meta.accent.includes("amber")
+                          ? "from-amber-400/30"
+                          : meta.accent.includes("sky")
+                            ? "from-sky-400/30"
+                            : "from-orange-400/30") +
+                      " to-transparent"
+                    }
+                  />
+                )}
+
+                <div className="relative flex items-center gap-5 sm:gap-6">
+                  {/* Avatar — generated portrait silhouette, sized to dominate
+                      the row. Square crop via object-cover keeps the
+                      shoulders-up framing readable. */}
+                  <div className="relative shrink-0">
+                    <div
+                      className={
+                        "w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden " +
+                        "ring-4 transition-all " +
+                        (on ? "ring-white" : meta.accent)
+                      }
+                    >
+                      <img
+                        src={`/media/img/_voice_${meta.slug}.png`}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        draggable={false}
+                      />
+                    </div>
+                    {/* Mic badge — anchored to the avatar so it reads as
+                        "this is a voice profile". */}
+                    <div
+                      className={
+                        "absolute -bottom-1 -right-1 w-8 h-8 rounded-full " +
+                        "grid place-items-center text-[15px] " +
+                        "ring-2 ring-ink " +
+                        (on ? "bg-white" : "bg-panel")
+                      }
+                    >
+                      🎙
+                    </div>
+                  </div>
+
                   <div className="min-w-0 flex-1">
-                    <div className="brutal-overlay text-white text-[5.5vw] sm:text-[clamp(20px,2.4vw,28px)] leading-[1]">
+                    <div className="brutal-overlay text-white text-[6.4vw] sm:text-[clamp(24px,2.8vw,32px)] leading-[1] mb-2">
                       {v.toUpperCase()}
                     </div>
-                    <div className="text-muted text-[3.4vw] sm:text-[clamp(13px,1.4vw,16px)] mt-1 leading-snug">
+                    <div className="text-muted text-[3.8vw] sm:text-[clamp(15px,1.6vw,18px)] leading-snug">
                       {meta.tag}
                     </div>
                   </div>
+
                   <div
                     className={
-                      "w-6 h-6 rounded-full grid place-items-center text-sm font-bold shrink-0 " +
-                      (on ? "bg-white text-ink" : "bg-white/10 text-transparent")
+                      "w-9 h-9 sm:w-10 sm:h-10 rounded-full grid place-items-center " +
+                      "text-base font-black shrink-0 transition-all " +
+                      (on
+                        ? "bg-white text-ink scale-100"
+                        : "bg-white/10 text-transparent scale-90 group-hover:bg-white/20")
                     }
                   >
                     ✓
@@ -300,6 +357,26 @@ function VoiceStep({
               </button>
             );
           })}
+        </div>
+
+        {/* Gradium attribution — text-only pill, scaled up to read as a
+            billboard. Same brutalist style as the content cards' PartnerStrip. */}
+        <div className="mt-6 flex justify-center">
+          <div
+            className="inline-flex items-center gap-6 px-9 py-6 rounded-full
+                       bg-black/55 backdrop-blur-md ring-1 ring-white/15 text-white/85"
+          >
+            <span className="text-[18px] uppercase tracking-[0.22em] font-bold text-white/60 whitespace-nowrap">
+              Powered by
+            </span>
+            <span className="text-[34px] font-black text-white whitespace-nowrap tracking-tight">
+              Gradium
+            </span>
+            <span className="w-px h-11 bg-white/25" aria-hidden />
+            <span className="text-[20px] text-white/70 font-semibold tracking-wide whitespace-nowrap">
+              Voice cloning
+            </span>
+          </div>
         </div>
       </div>
 
