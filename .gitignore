@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+
+# Local data + generated media (regenerated on each run)
+*.db
+*.db-journal
+backend/media/img/*
+backend/media/audio/*
+!backend/media/img/.gitkeep
+!backend/media/audio/.gitkeep
+
+# Secrets
+.env
+.env.local
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Node (Phase 2 frontend, not yet)
+node_modules/
+dist/
+.vite/
